@@ -1,0 +1,58 @@
+# Capistrano CircleCI 2.0 configuration file
+#
+version: 2
+jobs:
+  build:
+    docker:
+      - image: cimg/ruby:3.2.2-browsers
+    working_directory: ~/repo
+
+    steps:
+      - run:
+          name: Avoid hosts unknown for github
+          command: mkdir ~/.ssh/ && ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+
+      - checkout
+
+      # Download and cache dependencies
+      - restore-cache:
+          keys:
+            - v1-dependencies-{{ checksum "Gemfile.lock" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
+
+      - run:
+          name: Install Dependencies
+          command: |
+            gem update --system
+            gem install bundler
+            bundle install --retry=3 --path vendor/bundle
+
+      - save_cache:
+          paths:
+            - ./vendor/bundle
+          key: v1-dependencies-{{ checksum "Gemfile.lock" }}
+
+      - run:
+          name: Capistrano Deployment
+          command: bundle exec cap staging deploy
+
+      - run:
+          name: Clear Laravel Cache
+          command: bundle exec cap staging clear_laravel_cache
+
+      - run:
+          name: Composer Dump Autoload
+          command: bundle exec cap staging composer_dump_autoload
+
+      - run:
+          name: Capistrano Migrations
+          command: bundle exec cap staging laravel:migrate
+
+      - run:
+          name: PHP FPM Restart Service
+          command: bundle exec cap staging php_fpm_restart
+
+      - run:
+          name: Composer Update
+          command: bundle exec cap staging composer_update
